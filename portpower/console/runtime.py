@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import time
+from collections.abc import Callable
+from dataclasses import dataclass, field
 
 from portpower.audit.ledger import Ledger
 from portpower.berth.mapping import BerthMapping
@@ -17,6 +19,8 @@ from portpower.disconn.breaker import Breaker
 from portpower.disconn.limit import LimitEnforcer
 from portpower.disconn.protect import Protector
 from portpower.freq.syncer import Syncer
+from portpower.interlock.chain import EvidenceChain
+from portpower.interlock.policy import PolicyStore
 from portpower.meter.binder import Binder
 from portpower.meter.tariff import Tariff
 from portpower.ns.catalog import Catalog
@@ -64,6 +68,9 @@ class Runtime:
     shore: Breaker
     protector: Protector
     limiter: LimitEnforcer
+    interlock_policies: PolicyStore
+    interlock_chains: EvidenceChain
+    clock: Callable[[], float] = field(default=time.time)
 
 
 def build_runtime(harbor: Harbor, store: RecordStore) -> Runtime:
@@ -72,6 +79,7 @@ def build_runtime(harbor: Harbor, store: RecordStore) -> Runtime:
     for code in catalog.codes():
         berths.add(code)
 
+    clock = time.time
     filter_window = MovingAverageFilter(FILTER_WINDOW)
     cables = CableInventory()
     cable_id, cable_rating = SHORE_CABLE
@@ -88,7 +96,7 @@ def build_runtime(harbor: Harbor, store: RecordStore) -> Runtime:
         mapping=BerthMapping(store),
         berths=berths,
         binder=Binder(store),
-        syncer=Syncer(store),
+        syncer=Syncer(store, clock=clock),
         sensor=TemperatureSensor(),
         filter=filter_window,
         cable=cables.get(cable_id),
@@ -101,4 +109,7 @@ def build_runtime(harbor: Harbor, store: RecordStore) -> Runtime:
         shore=Breaker(SHORE_BREAKER_ID),
         protector=Protector(PROTECTION_THRESHOLD, filter_window),
         limiter=LimitEnforcer(ProfileRegistry(store)),
+        interlock_policies=PolicyStore(store),
+        interlock_chains=EvidenceChain(store),
+        clock=clock,
     )

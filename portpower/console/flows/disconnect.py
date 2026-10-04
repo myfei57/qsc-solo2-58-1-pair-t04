@@ -77,6 +77,7 @@ def run_disconnect(runtime, request: DisconnectRequest) -> DisconnectResult:
 
     release(connector)
     runtime.protector.open_and_reset(runtime.shore)
+    runtime.interlock_chains.revoke_all(request.berth)
     runtime.ledger.append(
         "disconnect",
         f"{runtime.harbor.qualified(request.berth)} {ship}",

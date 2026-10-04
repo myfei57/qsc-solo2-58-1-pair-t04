@@ -18,21 +18,23 @@ from portpower.console.validation import (
     valid_ship_id,
     valid_temperature,
 )
-from portpower.disconn.close import close_after_phase
 from portpower.disconn.limit import LoadExceedsProfile
 from portpower.disconn.open import open_breaker
-from portpower.disconn.parallel import parallel_close
+from portpower.interlock.enforce import close_with_chain
+from portpower.interlock.lanes import (
+    SYNC_TOLERANCE,
+    evaluate_frequency,
+    evaluate_phase,
+    evaluate_plug,
+)
 from portpower.meter.binder import Binding
 from portpower.meter.freeze import unfreeze
 from portpower.meter.meter import Meter
 from portpower.phase.parse import parse_sequence
-from portpower.phase.verifier import Verifier
 from portpower.plug.engage import engage
 from portpower.plug.plug import Plug
 from portpower.quota.quota import Quota
 from portpower.ship.profile import Profile
-
-SYNC_TOLERANCE = 0.5
 
 
 @dataclass(frozen=True)
@@ -68,6 +70,7 @@ class ConnectResult:
     phase: str
     cable_rating: str
     temperature: float
+    interlock: dict[str, object]
 
     def as_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -107,16 +110,38 @@ def run_connect(runtime, request: ConnectRequest) -> ConnectResult:
         connector = Plug(connection_id)
         engage(connector, request.berth, runtime.binder)
 
-        verifier = Verifier(sequence)
-        close_after_phase(runtime.shore, verifier)
         runtime.phase.set(sequence)
 
-        parallel_close(
-            runtime.shore,
-            runtime.syncer,
-            target=profile.frequency,
-            tolerance=SYNC_TOLERANCE,
+        now = runtime.clock()
+        policy = runtime.interlock_policies.for_berth(request.berth)
+        runtime.interlock_chains.record(
+            request.berth,
+            evaluate_plug(
+                engaged=connector.engaged,
+                bound_ship=connector.bound_ship,
+                expected_ship=request.ship,
+                policy=policy,
+                now=now,
+            ),
         )
+        runtime.interlock_chains.record(
+            request.berth,
+            evaluate_phase(sequence=sequence, policy=policy, now=now),
+        )
+        runtime.interlock_chains.record(
+            request.berth,
+            evaluate_frequency(
+                syncer=runtime.syncer,
+                target=profile.frequency,
+                tolerance=SYNC_TOLERANCE,
+                policy=policy,
+                now=now,
+            ),
+        )
+        decision = close_with_chain(
+            runtime.shore, runtime.interlock_chains, request.berth, policy, now
+        )
+
         runtime.sensor.set(request.temperature)
         runtime.monitor.observe(request.temperature)
         runtime.protector.verdict(runtime.sensor.read())
@@ -142,6 +167,7 @@ def run_connect(runtime, request: ConnectRequest) -> ConnectResult:
             runtime.sensor.read(), runtime.cable.rated_temperature
         ).value,
         temperature=runtime.sensor.read(),
+        interlock=decision.as_dict(),
     )
 
 
@@ -184,5 +210,6 @@ class _Rollback:
         runtime.binder.unbind(request.berth)
         runtime.mapping.unbind(request.berth)
         runtime.fleet.undock(request.ship)
+        runtime.interlock_chains.revoke_all(request.berth)
         if runtime.shore.closed:
             open_breaker(runtime.shore)

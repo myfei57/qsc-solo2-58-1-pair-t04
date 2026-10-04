@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import time
+from collections.abc import Callable
+
 from portpower.freq.band import DEFAULT_TARGET, in_band
 from portpower.freq.samples import SampleLog
 from portpower.freq.sync import read_current, set_current
@@ -9,10 +12,15 @@ from portpower.store.kvstore import RecordStore
 
 
 class Syncer:
-    def __init__(self, store: RecordStore, initial: float = DEFAULT_TARGET) -> None:
+    def __init__(
+        self,
+        store: RecordStore,
+        initial: float = DEFAULT_TARGET,
+        clock: Callable[[], float] = time.time,
+    ) -> None:
         self._store = store
         self._fallback = float(initial)
-        self._samples = SampleLog(store)
+        self._samples = SampleLog(store, clock)
 
     @property
     def current(self) -> float:
@@ -34,6 +42,9 @@ class Syncer:
 
     def latest_sample(self) -> float | None:
         return self._samples.latest
+
+    def latest_sample_at(self) -> float | None:
+        return self._samples.latest_at()
 
     def within(self, target: float = DEFAULT_TARGET, tolerance: float = 0.5) -> bool:
         return in_band(self.current, target, tolerance)

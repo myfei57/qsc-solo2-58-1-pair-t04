@@ -12,6 +12,7 @@ from portpower.console.handlers import (
     connect,
     disconnect,
     frequency,
+    interlock,
     meter,
     quota,
     schedule,
@@ -70,6 +71,13 @@ def build_router(runtime) -> Router:
     router.post("/breaker/trip", bind(breaker.breaker_trip, runtime))
     router.post("/breaker/reset", bind(breaker.breaker_reset, runtime))
     router.get("/breaker/interlock", bind(breaker.breaker_interlock, runtime))
+
+    router.get("/interlock", bind(interlock.interlock_status, runtime))
+    router.get("/interlock/policy", bind(interlock.interlock_policy_get, runtime))
+    router.post("/interlock/policy", bind(interlock.interlock_policy_set, runtime))
+    router.post("/interlock/evaluate", bind(interlock.interlock_evaluate, runtime))
+    router.post("/interlock/revoke", bind(interlock.interlock_revoke, runtime))
+    router.post("/interlock/enforce", bind(interlock.interlock_enforce, runtime))
 
     router.post("/reservation", bind(schedule.reservation_book, runtime))
     router.get("/reservations", bind(schedule.reservation_list, runtime))

@@ -54,6 +54,17 @@ def run_disconnect(runtime, request: DisconnectRequest) -> DisconnectResult:
         raise BindingMissing(f"no meter binding for berth {request.berth}")
     ship = request.ship or binding.ship
 
+    # Withdraw the plug evidence: the chain must no longer permit the
+    # closed state, and the open order is acted on explicitly below.
+    runtime.interlocks.plug_withdrawn(request.berth)
+    order = runtime.interlocks.enforce(request.berth)
+    if order is not None:
+        for reason in order.reasons:
+            runtime.ledger.append(
+                "interlock.open",
+                f"{runtime.harbor.qualified(request.berth)} {reason}",
+            )
+
     arm = BreakerArm()
     arm.arm()
     close_after_arm(runtime.shore, arm)

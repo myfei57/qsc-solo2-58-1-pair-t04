@@ -11,6 +11,7 @@ from portpower.disconn.close import ArmMissing
 from portpower.disconn.limit import LoadExceedsProfile
 from portpower.disconn.parallel import FrequencyOutOfSync
 from portpower.disconn.trip import BreakerAlreadyClosed
+from portpower.interlock.manager import EvidenceChainDenied
 from portpower.meter.binder import BindingMissing
 from portpower.meter.meter import MeterFrozen
 from portpower.phase.verifier import PhaseReversed
@@ -27,6 +28,7 @@ CONFLICT_ERRORS: tuple[type[Exception], ...] = (
     BreakerAlreadyClosed,
     ArmMissing,
     FrequencyOutOfSync,
+    EvidenceChainDenied,
     BindingMissing,
     MeterFrozen,
     LoadExceedsProfile,

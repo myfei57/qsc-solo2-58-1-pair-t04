@@ -17,6 +17,7 @@ from portpower.disconn.breaker import Breaker
 from portpower.disconn.limit import LimitEnforcer
 from portpower.disconn.protect import Protector
 from portpower.freq.syncer import Syncer
+from portpower.interlock.manager import InterlockManager
 from portpower.meter.binder import Binder
 from portpower.meter.tariff import Tariff
 from portpower.ns.catalog import Catalog
@@ -64,6 +65,7 @@ class Runtime:
     shore: Breaker
     protector: Protector
     limiter: LimitEnforcer
+    interlocks: InterlockManager
 
 
 def build_runtime(harbor: Harbor, store: RecordStore) -> Runtime:
@@ -76,6 +78,9 @@ def build_runtime(harbor: Harbor, store: RecordStore) -> Runtime:
     cables = CableInventory()
     cable_id, cable_rating = SHORE_CABLE
     cables.add(cable_id, cable_rating)
+
+    interlocks = InterlockManager(store)
+    interlocks.ensure_boards(catalog.codes())
 
     return Runtime(
         harbor=harbor,
@@ -101,4 +106,5 @@ def build_runtime(harbor: Harbor, store: RecordStore) -> Runtime:
         shore=Breaker(SHORE_BREAKER_ID),
         protector=Protector(PROTECTION_THRESHOLD, filter_window),
         limiter=LimitEnforcer(ProfileRegistry(store)),
+        interlocks=interlocks,
     )

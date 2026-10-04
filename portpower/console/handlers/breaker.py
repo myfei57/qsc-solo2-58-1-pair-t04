@@ -29,14 +29,45 @@ def breaker_trip(runtime, request: Request) -> Response:
 
 
 def breaker_reset(runtime, request: Request) -> Response:
-    reset_breaker(runtime.shore)
+    """Reset from a trip; with ``?berth=`` the evidence chain must permit it."""
+
+    berth = request.query_one("berth")
+    chain_payload: dict[str, object] | None = None
+    if berth:
+        if not runtime.catalog.has(berth):
+            raise LookupError(f"unknown berth {berth!r}")
+        evaluation = runtime.interlocks.permit_close(berth)
+        chain_payload = evaluation.as_dict()
+        runtime.shore.clear_trip()
+        runtime.shore.mark_closed()
+    else:
+        reset_breaker(runtime.shore)
     return Response.json(
         200,
-        {"closed": runtime.shore.closed, "state": runtime.shore.state.value},
+        {
+            "closed": runtime.shore.closed,
+            "state": runtime.shore.state.value,
+            "interlock": chain_payload,
+        },
     )
 
 
 def breaker_interlock(runtime, request: Request) -> Response:
+    berth = request.query_one("berth")
+    if berth:
+        if not runtime.catalog.has(berth):
+            raise LookupError(f"unknown berth {berth!r}")
+        evaluation = runtime.interlocks.evaluate(berth)
+        return Response.json(
+            200,
+            {
+                "ready": evaluation.allowed and not runtime.shore.tripped,
+                "berth": berth,
+                "chain": evaluation.as_dict(),
+                "policy": runtime.interlocks.policy(berth).as_dict(),
+            },
+        )
+
     arm = BreakerArm()
     arm.arm()
     verifier = Verifier(runtime.phase.current)

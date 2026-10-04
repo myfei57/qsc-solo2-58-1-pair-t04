@@ -68,6 +68,7 @@ class ConnectResult:
     phase: str
     cable_rating: str
     temperature: float
+    interlock: dict[str, object] | None = None
 
     def as_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -107,6 +108,15 @@ def run_connect(runtime, request: ConnectRequest) -> ConnectResult:
         connector = Plug(connection_id)
         engage(connector, request.berth, runtime.binder)
 
+        # Evidence chain: each channel issues its own dated verdict;
+        # permit_close re-derives frequency evidence from stamped samples so
+        # only a fresh, stable, in-band sample can carry the close.
+        runtime.interlocks.plug_confirmed(
+            request.berth, connection_id, request.ship
+        )
+        runtime.interlocks.phase_observed(request.berth, sequence)
+        evaluation = runtime.interlocks.permit_close(request.berth)
+
         verifier = Verifier(sequence)
         close_after_phase(runtime.shore, verifier)
         runtime.phase.set(sequence)
@@ -142,6 +152,7 @@ def run_connect(runtime, request: ConnectRequest) -> ConnectResult:
             runtime.sensor.read(), runtime.cable.rated_temperature
         ).value,
         temperature=runtime.sensor.read(),
+        interlock=evaluation.as_dict(),
     )
 
 
@@ -178,6 +189,7 @@ class _Rollback:
     def undo(self) -> None:
         runtime = self._runtime
         request = self._request
+        runtime.interlocks.clear_close(request.berth)
         berth = runtime.berths.get(request.berth)
         if berth is not None and berth.ship_id == request.ship:
             runtime.berths.release(request.berth)
